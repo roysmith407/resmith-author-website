@@ -24,6 +24,56 @@ const bools = new Set([
 let adminToken = "";
 let books = [];
 
+let originalEditorValues = {};
+
+const richTextFields = new Set([
+  "description",
+  "fullDescription",
+  "signedCopyInstructions"
+]);
+
+function htmlToPlainText(value) {
+  const input = String(value ?? "");
+
+  if (!/<\/?[a-z][\s\S]*?>/i.test(input)) {
+    return input;
+  }
+
+  const doc = new DOMParser().parseFromString(input, "text/html");
+
+  doc.querySelectorAll("br").forEach((node) => {
+    node.replaceWith("\n");
+  });
+
+  doc.querySelectorAll("p, div, li, h1, h2, h3, h4, blockquote")
+    .forEach((node) => {
+      node.append("\n");
+    });
+
+  return (doc.body.textContent || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n[ \t]+/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function plainTextToHtml(value) {
+  return String(value ?? "")
+    .replace(/\r\n?/g, "\n")
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+    .map((paragraph) =>
+      `<p class="font_8">${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`
+    )
+    .join("");
+}
+
+function normalizeEditorText(value) {
+  return String(value ?? "").replace(/\r\n?/g, "\n").trim();
+}
+
 function setStatus(text) {
   $("#connection-status").textContent = text;
 }
@@ -175,8 +225,6 @@ function showForm(book = null) {
     ? "Edit book"
     : "Add a book";
 
-  // Keep every existing field, including fields that are not
-  // displayed in the form. This is essential when editing.
   const values = book ? { ...book } : {
     author: "R. E. Smith",
     publicationStatus: "",
@@ -188,19 +236,39 @@ function showForm(book = null) {
     signedCopyAvailable: false
   };
 
+  // Remember the original values so unchanged content is preserved.
+  originalEditorValues = {};
+
+  for (const key of richTextFields) {
+    originalEditorValues[key] = book
+      ? String(book[key] ?? "")
+      : "";
+  }
+
+  originalEditorValues.publicationDate = book
+    ? String(book.publicationDate ?? "")
+    : "";
+
+  // Fill in the form, displaying descriptions as readable text.
   for (const key of fields) {
     const element = $(`#f-${key}`);
     if (!element) continue;
 
     if (bools.has(key)) {
       element.checked = Boolean(values[key]);
+    } else if (richTextFields.has(key)) {
+      element.value = htmlToPlainText(values[key] ?? "");
+    } else if (key === "publicationDate") {
+      const rawDate = String(values[key] ?? "");
+      element.value = /^\d{4}-\d{2}-\d{2}/.test(rawDate)
+        ? rawDate.slice(0, 10)
+        : rawDate;
     } else {
       element.value = values[key] ?? "";
     }
   }
 
-  // Support existing status values such as "Available" even if
-  // that value was not originally listed in the dropdown.
+  // Preserve publication statuses already used by existing books.
   const status = $("#f-publicationStatus");
   const currentStatus = values.publicationStatus ?? "";
 
@@ -217,7 +285,6 @@ function showForm(book = null) {
   }
 
   status.value = currentStatus;
-
   form.hidden = false;
 
   form.scrollIntoView({
@@ -257,9 +324,33 @@ async function saveBook(event) {
     const element = $(`#f-${key}`);
     if (!element) continue;
 
-    book[key] = bools.has(key)
-      ? element.checked
-      : element.value.trim();
+       if (bools.has(key)) {
+      book[key] = element.checked;
+    } else if (richTextFields.has(key)) {
+      const editedText = element.value.trim();
+      const originalHtml = originalEditorValues[key] ?? "";
+      const originalText = htmlToPlainText(originalHtml);
+
+      // Preserve original HTML when the description is unchanged.
+      book[key] =
+        normalizeEditorText(editedText) === normalizeEditorText(originalText)
+          ? originalHtml
+          : plainTextToHtml(editedText);
+    } else if (key === "publicationDate") {
+      const editedDate = element.value.trim();
+      const originalDate = originalEditorValues.publicationDate ?? "";
+
+      const originalDateOnly = /^\d{4}-\d{2}-\d{2}/.test(originalDate)
+        ? originalDate.slice(0, 10)
+        : originalDate;
+
+      // Preserve the original timestamp if the date hasn't changed.
+      book[key] = editedDate === originalDateOnly
+        ? originalDate
+        : editedDate;
+    } else {
+      book[key] = element.value.trim();
+    }
   }
 
   if (!book.id) {
