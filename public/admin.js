@@ -214,7 +214,6 @@ function renderBooks() {
 
   message(`Showing ${filtered.length} of ${books.length} books.`);
 }
-```javascript
 function updateCoverPreview() {
   const input = $("#f-coverUrl");
   const container = $("#cover-preview-container");
