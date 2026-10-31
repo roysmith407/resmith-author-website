@@ -1,4 +1,4 @@
-name = "resmith-author-site"
+name = "resmith-author-website"
 main = "src/worker.js"
 compatibility_date = "2026-10-30"
 
@@ -10,7 +10,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "resmith-books"
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = 265733c9-760a-4b9d-a301-30cb22e76de8
 migrations_dir = "migrations"
 
 # Optional: configure an R2 bucket for cover uploads.
