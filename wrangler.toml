@@ -1,0 +1,19 @@
+name = "resmith-author-site"
+main = "src/worker.js"
+compatibility_date = "2026-10-30"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "resmith-books"
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+migrations_dir = "migrations"
+
+# Optional: configure an R2 bucket for cover uploads.
+# [[r2_buckets]]
+# binding = "COVERS"
+# bucket_name = "resmith-book-covers"
