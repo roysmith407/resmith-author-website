@@ -1,23 +1,42 @@
-const $=s=>document.querySelector(s);let token=sessionStorage.getItem("resmith_admin_token")||"",books=[];
-const fields=["id","title","subtitle","author","series","seriesOrder","description","fullDescription","bookPages","genre","publicationStatus","publicationDate","isbn","bookFormat","purchaseLink","amazonLink","googlePlayBooksLink","featuredBook","hardcoverAvailable","paperbackAvailable","eBookAvailable","audiobookAvailable","signedCopyAvailable","signedHardcoverPrice","signedPaperbackPrice","directOrderInstructions","signedCopyContactEmail","signedCopyInstructions","signedContactEmail","slug","coverUrl"];
-const bools=new Set(["featuredBook","hardcoverAvailable","paperbackAvailable","eBookAvailable","audiobookAvailable","signedCopyAvailable"]);
-function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
-async function api(path,options={}){const r=await fetch(path,{...options,headers:{"content-type":"application/json",...(options.headers||{}),...(token?{authorization:"Bearer "+token}:{})}});const data=await r.json().catch(()=>({}));if(!r.ok)throw Error(data.error||`Request failed (${r.status})`);return data;}
-async function connect(){try{const check=await api("/api/admin/check");if(!check.configured)throw Error("Admin token is not configured on the server yet.");if(!check.authorized)throw Error("Token not accepted.");$("#login-panel").hidden=true;$("#dashboard").hidden=false;$("#connection-status").textContent="Connected securely";$("#connection-status").style.color="#47744b";await refresh();}catch(e){token="";sessionStorage.removeItem("resmith_admin_token");$("#login-panel").hidden=false;$("#dashboard").hidden=true;$("#login-error").textContent=e.message;$("#connection-status").textContent="Not connected";}}
-async function refresh(){const data=await api("/api/books");books=data.books||[];render();}
-function render(){const q=$("#admin-search").value.toLowerCase().trim();const shown=books.filter(b=>[b.title,b.subtitle,b.series,b.genre].join(" ").toLowerCase().includes(q));$("#admin-book-rows").innerHTML=shown.map(b=>`<tr><td>${esc(b.title)}${b.subtitle?`<br><small>${esc(b.subtitle)}</small>`:""}</td><td>${esc(b.series)}${b.seriesOrder?` #${esc(b.seriesOrder)}`:""}</td><td>${esc(b.genre)}</td><td>${esc(b.publicationStatus)}</td><td>${b.featuredBook?"Yes":"No"}</td><td><div class="row-actions"><button data-edit="${esc(b.id)}">Edit</button><button class="delete" data-delete="${esc(b.id)}">Delete</button></div></td></tr>`).join("");$("#admin-message").textContent=`${books.length} books in the catalog.`;document.querySelectorAll("[data-edit]").forEach(x=>x.onclick=()=>editBook(x.dataset.edit));document.querySelectorAll("[data-delete]").forEach(x=>x.onclick=()=>deleteBook(x.dataset.delete));}
-$("#login-form").addEventListener("submit",async e=>{e.preventDefault();token=$("#admin-token").value.trim();sessionStorage.setItem("resmith_admin_token",token);await connect();});
-$("#logout").onclick=()=>{token="";sessionStorage.removeItem("resmith_admin_token");$("#login-panel").hidden=false;$("#dashboard").hidden=true;$("#admin-token").value="";$("#connection-status").textContent="Signed out";};
-$("#admin-search").addEventListener("input",render);
-function showForm(){ $("#book-form").hidden=false;$("#book-form").scrollIntoView({behavior:"smooth",block:"start"});}
-function hideForm(){ $("#book-form").hidden=true;$("#book-form").reset();$("#f-id").value="";$("#f-author").value="R. E. Smith"; }
-$("#new-book").onclick=()=>{hideForm();$("#form-heading").textContent="Add a book";showForm();};
-$("#cancel-form").onclick=hideForm;$("#cancel-form-bottom").onclick=hideForm;
-function editBook(id){const b=books.find(x=>String(x.id)===String(id));if(!b)return;hideForm();$("#form-heading").textContent="Edit book";$("#f-id").value=b.id;for(const k of fields){const el=$("#f-"+k);if(!el)continue;if(bools.has(k))el.checked=!!b[k];else el.value=b[k]??"";}showForm();}
-$("#book-form").addEventListener("submit",async e=>{e.preventDefault();const b={};for(const k of fields){const el=$("#f-"+k);if(!el)continue;b[k]=bools.has(k)?el.checked:el.value.trim();}if(!b.id)b.id=crypto.randomUUID();b.slug=b.slug||b.title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"");try{await api("/api/admin/books/"+encodeURIComponent(b.id),{method:"PUT",body:JSON.stringify(b)});await refresh();hideForm();$("#admin-message").textContent="Book saved successfully.";}catch(err){alert(err.message);}});
-async function deleteBook(id){const b=books.find(x=>String(x.id)===String(id));if(!b||!confirm(`Delete "${b.title}" from the catalog? This cannot be undone.`))return;try{await api("/api/admin/books/"+encodeURIComponent(id),{method:"DELETE"});await refresh();}catch(e){alert(e.message);}}
-function parseCSV(text){const rows=[];let row=[],cell="",quoted=false;for(let i=0;i<text.length;i++){const c=text[i];if(quoted){if(c==='"'&&text[i+1]==='"'){cell+='"';i++;}else if(c==='"')quoted=false;else cell+=c;}else if(c==='"')quoted=true;else if(c===','){row.push(cell);cell="";}else if(c==='\n'){row.push(cell.replace(/\r$/,""));rows.push(row);row=[];cell="";}else cell+=c;}if(cell.length||row.length){row.push(cell.replace(/\r$/,""));rows.push(row);}const heads=(rows.shift()||[]).map(h=>h.trim());return rows.filter(r=>r.some(v=>v.trim())).map(r=>Object.fromEntries(heads.map((h,i)=>[h,r[i]??""])));}
-function normalizeImport(raw){const b={...raw};if(!b.id)b.id=crypto.randomUUID();for(const k of bools){const v=b[k];b[k]=v===true||["true","yes","1","y"].includes(String(v).toLowerCase());}if(typeof b.image==="string"&&!b.coverUrl){try{b.coverUrl=JSON.parse(b.image).url||"";}catch{}}if(!b.title&&b.Title)b.title=b.Title;return b;}
-$("#csv-import").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;try{const raw=parseCSV(await file.text());const incoming=raw.map(normalizeImport).filter(b=>b.title);if(!incoming.length)throw Error("No rows with a title were found in that CSV.");if(!confirm(`Import ${incoming.length} books? Matching IDs will update existing records; records without IDs will be added.`))return;const result=await api("/api/admin/books",{method:"POST",body:JSON.stringify({books:incoming})});await refresh();alert(`Saved ${result.saved} books.`);}catch(err){alert("CSV import failed: "+err.message);}finally{e.target.value="";}});
-$("#export-csv").onclick=()=>{const quote=v=>{if(bools.has(v))return books;};const data=[fields.join(","),...books.map(b=>fields.map(k=>{let v=b[k]??"";if(bools.has(k))v=!!v;v=String(v);return /[",\r\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(","))].join("\r\n");const blob=new Blob([data],{type:"text/csv;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="resmith-books-export.csv";a.click();URL.revokeObjectURL(a.href);};
-if(token)connect();
+```javascript
+$("#book-form").addEventListener("submit", async e => {
+  e.preventDefault();
+
+  const existing = $("#f-id").value
+    ? books.find(b => String(b.id) === String($("#f-id").value))
+    : null;
+
+  // Preserve fields that are not represented in the HTML form.
+  const b = existing ? { ...existing } : {};
+
+  for (const k of fields) {
+    const el = $("#f-" + k);
+    if (!el) continue;
+
+    b[k] = bools.has(k) ? el.checked : el.value.trim();
+  }
+
+  if (!b.id) b.id = crypto.randomUUID();
+
+  if (!b.slug) {
+    b.slug = b.title.toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
+  }
+
+  try {
+    await api("/api/admin/books/" + encodeURIComponent(b.id), {
+      method: "PUT",
+      body: JSON.stringify(b)
+    });
+
+    await refresh();
+    hideForm();
+    $("#admin-message").textContent = "Book saved successfully.";
+  } catch (err) {
+    alert("Could not save book: " + err.message);
+  }
+});
+```
