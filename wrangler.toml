@@ -10,7 +10,7 @@ run_worker_first = ["/api/*"]
 [[d1_databases]]
 binding = "DB"
 database_name = "resmith-books"
-database_id = 265733c9-760a-4b9d-a301-30cb22e76de8
+database_id = "265733c9-760a-4b9d-a301-30cb22e76de8"
 migrations_dir = "migrations"
 
 # Optional: configure an R2 bucket for cover uploads.
