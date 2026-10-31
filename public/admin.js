@@ -214,7 +214,41 @@ function renderBooks() {
 
   message(`Showing ${filtered.length} of ${books.length} books.`);
 }
+```javascript
+function updateCoverPreview() {
+  const input = $("#f-coverUrl");
+  const container = $("#cover-preview-container");
+  const image = $("#cover-preview");
+  const error = $("#cover-preview-error");
 
+  if (!input || !container || !image || !error) return;
+
+  const url = input.value.trim();
+
+  error.hidden = true;
+
+  if (!url) {
+    container.hidden = true;
+    image.removeAttribute("src");
+    return;
+  }
+
+  container.hidden = false;
+  image.hidden = false;
+
+  image.onload = () => {
+    image.hidden = false;
+    error.hidden = true;
+  };
+
+  image.onerror = () => {
+    image.hidden = true;
+    error.hidden = false;
+  };
+
+  image.src = url;
+}
+```
 function showForm(book = null) {
   const form = $("#book-form");
   form.reset();
@@ -284,8 +318,9 @@ function showForm(book = null) {
     status.appendChild(option);
   }
 
-  status.value = currentStatus;
-  form.hidden = false;
+status.value = currentStatus;
+updateCoverPreview();
+form.hidden = false;
 
   form.scrollIntoView({
     behavior: "smooth",
@@ -543,7 +578,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#login-form").addEventListener("submit", connectDashboard);
 
   $("#admin-search").addEventListener("input", renderBooks);
-
+$("#f-coverUrl").addEventListener("input", updateCoverPreview);
   $("#new-book").addEventListener("click", () => showForm());
 
   $("#cancel-form").addEventListener("click", hideForm);
