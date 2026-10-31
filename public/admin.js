@@ -247,7 +247,6 @@ function updateCoverPreview() {
 
   image.src = url;
 }
-```
 function showForm(book = null) {
   const form = $("#book-form");
   form.reset();
