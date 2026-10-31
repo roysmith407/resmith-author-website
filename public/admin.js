@@ -1,38 +1,15 @@
-"use strict";
-
 const $ = (selector) => document.querySelector(selector);
 
-let adminToken = "";
-let books = [];
-
 const fields = [
-  "title",
-  "subtitle",
-  "author",
-  "series",
-  "seriesOrder",
-  "genre",
-  "publicationStatus",
-  "publicationDate",
-  "bookPages",
-  "isbn",
-  "bookFormat",
-  "coverUrl",
-  "amazonLink",
-  "purchaseLink",
-  "googlePlayBooksLink",
-  "signedContactEmail",
-  "signedHardcoverPrice",
-  "signedPaperbackPrice",
-  "description",
-  "fullDescription",
-  "signedCopyInstructions",
-  "featuredBook",
-  "hardcoverAvailable",
-  "paperbackAvailable",
-  "eBookAvailable",
-  "audiobookAvailable",
-  "signedCopyAvailable"
+  "id", "title", "subtitle", "author", "series", "seriesOrder",
+  "description", "fullDescription", "bookPages", "genre",
+  "publicationStatus", "publicationDate", "isbn", "bookFormat",
+  "purchaseLink", "amazonLink", "googlePlayBooksLink", "featuredBook",
+  "hardcoverAvailable", "paperbackAvailable", "eBookAvailable",
+  "audiobookAvailable", "signedCopyAvailable", "signedHardcoverPrice",
+  "signedPaperbackPrice", "directOrderInstructions",
+  "signedCopyContactEmail", "signedCopyInstructions",
+  "signedContactEmail", "slug", "coverUrl"
 ];
 
 const bools = new Set([
@@ -44,38 +21,22 @@ const bools = new Set([
   "signedCopyAvailable"
 ]);
 
-function setStatus(text, connected = false) {
-  const element = $("#connection-status");
+let adminToken = "";
+let books = [];
 
-  if (element) {
-    element.textContent = text;
-    element.classList.toggle("connected", connected);
-  }
+function setStatus(text) {
+  $("#connection-status").textContent = text;
 }
 
 function message(text) {
-  const element = $("#admin-message");
-
-  if (element) {
-    element.textContent = text;
-  }
-}
-
-function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, char => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
-  })[char]);
+  $("#admin-message").textContent = text;
 }
 
 async function api(path, options = {}) {
   const headers = {
-    Authorization: `Bearer ${adminToken}`,
-    ...(options.body
-      ? { "Content-Type": "application/json" }
+    "Content-Type": "application/json",
+    ...(adminToken
+      ? { Authorization: `Bearer ${adminToken}` }
       : {}),
     ...(options.headers || {})
   };
@@ -85,29 +46,28 @@ async function api(path, options = {}) {
     headers
   });
 
-  const responseText = await response.text();
+  const text = await response.text();
   let data = {};
 
   try {
-    data = responseText ? JSON.parse(responseText) : {};
+    data = text ? JSON.parse(text) : {};
   } catch {
-    data = { message: responseText };
+    throw new Error("The server returned an unreadable response.");
   }
 
   if (!response.ok) {
     throw new Error(
-      data.error ||
-      data.message ||
-      `Request failed (${response.status})`
+      data.error || `Request failed (${response.status}).`
     );
   }
 
   return data;
 }
 
-async function connectDashboard() {
-  const tokenInput = $("#admin-token");
-  const token = tokenInput.value.trim();
+async function connectDashboard(event) {
+  if (event) event.preventDefault();
+
+  const token = $("#admin-token").value.trim();
 
   if (!token) {
     $("#login-error").textContent = "Enter your admin token.";
@@ -116,67 +76,65 @@ async function connectDashboard() {
 
   adminToken = token;
   $("#login-error").textContent = "";
-  setStatus("Connecting…");
+  setStatus("Connecting...");
 
   try {
-    const check = await api("/api/admin/check");
+    const result = await api("/api/admin/check");
 
-    if (!check.authorized) {
-      throw new Error(
-        check.configured
-          ? "The token was rejected. Check that it matches your Cloudflare ADMIN_TOKEN."
-          : "The Cloudflare ADMIN_TOKEN secret is not configured."
-      );
+    if (!result.configured) {
+      throw new Error("The ADMIN_TOKEN secret is not configured.");
     }
+
+    if (!result.authorized) {
+      throw new Error("The admin token was not accepted.");
+    }
+
+    sessionStorage.setItem("resmith_admin_token", token);
 
     await refresh();
 
-    sessionStorage.setItem("resmith_admin_token", adminToken);
-
     $("#login-panel").hidden = true;
     $("#dashboard").hidden = false;
-
-    setStatus("Connected", true);
-    message(`${books.length} books loaded.`);
+    setStatus("Connected");
   } catch (error) {
     adminToken = "";
-    sessionStorage.removeItem("resmith_admin_token");
-
+    $("#login-error").textContent = error.message;
     setStatus("Not connected");
-
-    $("#login-error").textContent =
-      "Could not connect: " + error.message;
   }
 }
 
 async function refresh() {
   const data = await api("/api/books");
-
-  books = Array.isArray(data)
-    ? data
-    : (data.books || data.results || []);
-
+  books = Array.isArray(data.books) ? data.books : [];
   renderBooks();
 }
 
-function renderBooks() {
-  const searchElement = $("#admin-search");
-  const query = (searchElement?.value || "").trim().toLowerCase();
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  })[char]);
+}
 
-  const filtered = books.filter(book =>
-    [
+function renderBooks() {
+  const query = $("#admin-search").value.trim().toLowerCase();
+
+  const filtered = books.filter((book) => {
+    const text = [
       book.title,
       book.series,
       book.genre,
       book.publicationStatus,
       book.isbn
-    ]
-      .join(" ")
-      .toLowerCase()
-      .includes(query)
-  );
+    ].join(" ").toLowerCase();
 
-  $("#admin-book-rows").innerHTML = filtered.map(book => `
+    return text.includes(query);
+  });
+
+  $("#admin-book-rows").innerHTML = filtered.map((book) => `
     <tr>
       <td>${escapeHtml(book.title)}</td>
       <td>${escapeHtml(book.series)}</td>
@@ -184,31 +142,23 @@ function renderBooks() {
       <td>${escapeHtml(book.publicationStatus)}</td>
       <td>${book.featuredBook ? "Yes" : "No"}</td>
       <td>
-        <button type="button"
-          data-edit="${escapeHtml(book.id)}">Edit</button>
-        <button type="button"
-          data-delete="${escapeHtml(book.id)}">Delete</button>
+        <button
+          type="button"
+          class="button button-outline"
+          data-edit-id="${escapeHtml(book.id)}"
+        >Edit</button>
       </td>
     </tr>
   `).join("");
 
-  $("#admin-book-rows")
-    .querySelectorAll("[data-edit]")
-    .forEach(button => {
+  $("#admin-book-rows").querySelectorAll("[data-edit-id]")
+    .forEach((button) => {
       button.addEventListener("click", () => {
-        const book = books.find(item =>
-          String(item.id) === button.dataset.edit
+        const book = books.find(
+          (item) => String(item.id) === button.dataset.editId
         );
 
         if (book) showForm(book);
-      });
-    });
-
-  $("#admin-book-rows")
-    .querySelectorAll("[data-delete]")
-    .forEach(button => {
-      button.addEventListener("click", () => {
-        deleteBook(button.dataset.delete);
       });
     });
 
@@ -216,30 +166,68 @@ function renderBooks() {
 }
 
 function showForm(book = null) {
-  $("#book-form").hidden = false;
+  const form = $("#book-form");
+  form.reset();
 
-  $("#form-heading").textContent =
-    book ? "Edit a book" : "Add a book";
+  const isEditing = Boolean(book);
 
-  $("#book-form").reset();
-  $("#f-id").value = book?.id || "";
+  $("#form-heading").textContent = isEditing
+    ? "Edit book"
+    : "Add a book";
+
+  // Keep every existing field, including fields that are not
+  // displayed in the form. This is essential when editing.
+  const values = book ? { ...book } : {
+    author: "R. E. Smith",
+    publicationStatus: "",
+    featuredBook: false,
+    hardcoverAvailable: false,
+    paperbackAvailable: false,
+    eBookAvailable: false,
+    audiobookAvailable: false,
+    signedCopyAvailable: false
+  };
 
   for (const key of fields) {
-    const element = $("#f-" + key);
-
+    const element = $(`#f-${key}`);
     if (!element) continue;
 
     if (bools.has(key)) {
-      element.checked = Boolean(book?.[key]);
+      element.checked = Boolean(values[key]);
     } else {
-      element.value = book?.[key] ?? "";
+      element.value = values[key] ?? "";
     }
   }
 
-  $("#book-form").scrollIntoView({
+  // Support existing status values such as "Available" even if
+  // that value was not originally listed in the dropdown.
+  const status = $("#f-publicationStatus");
+  const currentStatus = values.publicationStatus ?? "";
+
+  if (
+    currentStatus &&
+    !Array.from(status.options).some(
+      (option) => option.value === currentStatus
+    )
+  ) {
+    const option = document.createElement("option");
+    option.value = currentStatus;
+    option.textContent = currentStatus;
+    status.appendChild(option);
+  }
+
+  status.value = currentStatus;
+
+  form.hidden = false;
+
+  form.scrollIntoView({
     behavior: "smooth",
     block: "start"
   });
+}
+
+function hideForm() {
+  $("#book-form").hidden = true;
 }
 
 async function saveBook(event) {
@@ -247,16 +235,26 @@ async function saveBook(event) {
 
   const id = $("#f-id").value.trim();
 
+  // Find the original record before changing any form values.
   const existing = id
-    ? books.find(book => String(book.id) === id)
+    ? books.find((book) => String(book.id) === id)
     : null;
 
-  // Preserve database fields that are not displayed in the form.
+  if (id && !existing) {
+    alert(
+      "The original book record could not be found. " +
+      "Nothing was saved. Refresh the dashboard and try again."
+    );
+    return;
+  }
+
+  // Start with the complete original record, preserving fields
+  // that do not have an input on the form.
   const book = existing ? { ...existing } : {};
 
+  // Read only fields actually represented in the HTML form.
   for (const key of fields) {
-    const element = $("#f-" + key);
-
+    const element = $(`#f-${key}`);
     if (!element) continue;
 
     book[key] = bools.has(key)
@@ -264,98 +262,61 @@ async function saveBook(event) {
       : element.value.trim();
   }
 
+  if (!book.id) {
+    book.id = crypto.randomUUID();
+  }
+
+  if (!book.author) {
+    book.author = "R. E. Smith";
+  }
+
   if (!book.title) {
     alert("Please enter a book title.");
     return;
   }
 
-  const saveButton = $("#book-form button[type='submit']");
-  saveButton.disabled = true;
-  saveButton.textContent = "Saving…";
-
-  try {
-    if (id) {
-      await api(
-        `/api/admin/books/${encodeURIComponent(id)}`,
-        {
-          method: "PUT",
-          body: JSON.stringify(book)
-        }
-      );
-    } else {
-      await api("/api/admin/books", {
-        method: "POST",
-        body: JSON.stringify(book)
-      });
-    }
-
-    await refresh();
-
-    $("#book-form").hidden = true;
-
-    message(id ? "Book updated successfully." : "Book added successfully.");
-  } catch (error) {
-    alert("Could not save the book:\n" + error.message);
-  } finally {
-    saveButton.disabled = false;
-    saveButton.textContent = "Save book";
+  if (!book.slug) {
+    book.slug = book.title
+      .toLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "");
   }
-}
-
-async function deleteBook(id) {
-  const book = books.find(item => String(item.id) === String(id));
-
-  if (!book) {
-    alert("That book could not be found.");
-    return;
-  }
-
-  const confirmed = confirm(
-    `Delete "${book.title}" from the catalog?\n\nThis permanently removes that book record.`
-  );
-
-  if (!confirmed) return;
 
   try {
     await api(
-      `/api/admin/books/${encodeURIComponent(id)}`,
-      { method: "DELETE" }
+      "/api/admin/books/" + encodeURIComponent(book.id),
+      {
+        method: "PUT",
+        body: JSON.stringify(book)
+      }
     );
 
     await refresh();
-    message(`Deleted "${book.title}".`);
+    hideForm();
+    message("Book saved successfully.");
   } catch (error) {
-    alert("Could not delete the book:\n" + error.message);
+    alert("Could not save the book: " + error.message);
   }
 }
 
-function csvEscape(value) {
-  const text = String(value ?? "");
-
-  return /[",\r\n]/.test(text)
-    ? '"' + text.replace(/"/g, '""') + '"'
-    : text;
-}
-
 function exportCsv() {
-  const columns = [
-    "id",
-    ...fields,
-    "directOrderInstructions",
-    "signedCopyContactEmail",
-    "slug"
-  ];
+  const columns = fields;
 
-  const uniqueColumns = [...new Set(columns)];
+  function csvCell(value) {
+    if (typeof value === "boolean") {
+      value = value ? "true" : "false";
+    }
+
+    const text = String(value ?? "");
+    return `"${text.replace(/"/g, '""')}"`;
+  }
 
   const rows = [
-    uniqueColumns.map(csvEscape).join(","),
-    ...books.map(book =>
-      uniqueColumns
-        .map(key => csvEscape(
-          bools.has(key) ? Boolean(book[key]) : book[key]
-        ))
-        .join(",")
+    columns.map(csvCell).join(","),
+    ...books.map((book) =>
+      columns.map((column) => csvCell(book[column])).join(",")
     )
   ];
 
@@ -377,116 +338,99 @@ function exportCsv() {
 function parseCsv(text) {
   const rows = [];
   let row = [];
-  let value = "";
+  let cell = "";
   let quoted = false;
 
   for (let i = 0; i < text.length; i++) {
     const char = text[i];
-    const next = text[i + 1];
 
     if (quoted) {
-      if (char === '"' && next === '"') {
-        value += '"';
+      if (char === '"' && text[i + 1] === '"') {
+        cell += '"';
         i++;
       } else if (char === '"') {
         quoted = false;
       } else {
-        value += char;
+        cell += char;
       }
-    } else if (char === '"') {
+    } else if (char === '"' && cell === "") {
       quoted = true;
     } else if (char === ",") {
-      row.push(value);
-      value = "";
-    } else if (char === "\n" || char === "\r") {
-      if (char === "\r" && next === "\n") i++;
-
-      row.push(value);
-      value = "";
-
-      if (row.some(cell => cell.trim() !== "")) {
-        rows.push(row);
-      }
-
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n") {
+      row.push(cell);
+      rows.push(row);
       row = [];
-    } else {
-      value += char;
+      cell = "";
+    } else if (char !== "\r") {
+      cell += char;
     }
   }
 
-  row.push(value);
+  row.push(cell);
 
-  if (row.some(cell => cell.trim() !== "")) {
+  if (row.some((value) => value !== "")) {
     rows.push(row);
   }
 
-  return rows;
+  if (rows.length < 2) {
+    throw new Error("The CSV file has no book records.");
+  }
+
+  const headers = rows.shift().map((header) => header.trim());
+
+  return rows
+    .filter((values) => values.some((value) => value.trim() !== ""))
+    .map((values) => {
+      const record = {};
+
+      headers.forEach((header, index) => {
+        if (fields.includes(header)) {
+          const value = values[index] ?? "";
+
+          record[header] = bools.has(header)
+            ? value.toLowerCase() === "true" || value === "1"
+            : value;
+        }
+      });
+
+      return record;
+    });
 }
 
 async function importCsv(event) {
-  const file = event.target.files?.[0];
-
+  const file = event.target.files[0];
   if (!file) return;
 
+  // Import can change records. Require an explicit confirmation.
+  if (!confirm(
+    "CSV import can add or update book records. " +
+    "Make sure you have exported a backup first. Continue?"
+  )) {
+    event.target.value = "";
+    return;
+  }
+
   try {
-    const text = await file.text();
-    const rows = parseCsv(text);
+    const records = parseCsv(await file.text());
 
-    if (rows.length < 2) {
-      throw new Error("The CSV file contains no book records.");
+    if (!confirm(
+      `The file contains ${records.length} rows. ` +
+      "Proceed with the import?"
+    )) {
+      return;
     }
 
-    const headers = rows[0].map(value => value.trim().replace(/^\uFEFF/, ""));
-
-    if (!headers.includes("title")) {
-      throw new Error('The CSV must contain a "title" column.');
-    }
-
-    const imported = rows.slice(1).map(row => {
-      const book = {};
-
-      headers.forEach((header, index) => {
-        if (header) book[header] = row[index] ?? "";
-      });
-
-      for (const key of bools) {
-        if (key in book) {
-          book[key] = (
-            book[key] === true ||
-            ["true", "1", "yes", "y"].includes(
-              String(book[key]).trim().toLowerCase()
-            )
-          );
-        }
-      }
-
-      return book;
-    }).filter(book => String(book.title || "").trim());
-
-    if (!imported.length) {
-      throw new Error("No rows with book titles were found.");
-    }
-
-    const confirmed = confirm(
-      `Found ${imported.length} books in this CSV.\n\n` +
-      "Matching IDs can update existing records. Records without matching IDs may be added as new books.\n\n" +
-      "Continue with import?"
-    );
-
-    if (!confirmed) return;
-
-    const result = await api("/api/admin/books", {
+    await api("/api/admin/books", {
       method: "POST",
-      body: JSON.stringify({ books: imported })
+      body: JSON.stringify({ books: records })
     });
 
     await refresh();
-
-    alert(
-      `Import finished. The server saved ${result.saved ?? "the submitted"} records.`
-    );
+    message(`Imported ${records.length} CSV rows.`);
   } catch (error) {
-    alert("CSV import failed:\n" + error.message);
+    alert("CSV import failed: " + error.message);
   } finally {
     event.target.value = "";
   }
@@ -502,31 +446,21 @@ function signOut() {
 
   setStatus("Not connected");
   $("#login-error").textContent = "";
-  message("");
 }
 
-function initializeDashboard() {
-  $("#login-form").addEventListener("submit", event => {
-    event.preventDefault();
-    connectDashboard();
-  });
-
-  $("#book-form").addEventListener("submit", saveBook);
-
-  $("#new-book").addEventListener("click", () => showForm());
-
-  $("#cancel-form").addEventListener("click", () => {
-    $("#book-form").hidden = true;
-  });
-
-  $("#cancel-form-bottom").addEventListener("click", () => {
-    $("#book-form").hidden = true;
-  });
+document.addEventListener("DOMContentLoaded", () => {
+  $("#login-form").addEventListener("submit", connectDashboard);
 
   $("#admin-search").addEventListener("input", renderBooks);
 
-  $("#export-csv").addEventListener("click", exportCsv);
+  $("#new-book").addEventListener("click", () => showForm());
 
+  $("#cancel-form").addEventListener("click", hideForm);
+  $("#cancel-form-bottom").addEventListener("click", hideForm);
+
+  $("#book-form").addEventListener("submit", saveBook);
+
+  $("#export-csv").addEventListener("click", exportCsv);
   $("#csv-import").addEventListener("change", importCsv);
 
   $("#logout").addEventListener("click", signOut);
@@ -536,6 +470,4 @@ function initializeDashboard() {
   if (savedToken) {
     $("#admin-token").value = savedToken;
   }
-}
-
-document.addEventListener("DOMContentLoaded", initializeDashboard);
+});
