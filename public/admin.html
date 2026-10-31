@@ -129,9 +129,26 @@
           <label>Book format
             <input id="f-bookFormat" placeholder="Paperback, eBook, etc.">
           </label>
-          <label>Cover image URL
-            <input id="f-coverUrl" type="url" placeholder="Optional image URL">
-          </label>
+        <label class="cover-upload-field">
+  Cover Image URL
+  <input
+    id="f-coverUrl"
+    type="url"
+    placeholder="Paste a Wix image URL here"
+  >
+  <span class="muted">Paste the image URL copied from your Wix Media Manager.</span>
+  <div id="cover-preview-container" hidden>
+    <p>Cover preview</p>
+    <img
+      id="cover-preview"
+      alt="Book cover preview"
+      style="display:block;max-width:180px;max-height:260px;object-fit:contain;border:1px solid #ddd;border-radius:4px;margin-top:8px;"
+    >
+    <p id="cover-preview-error" class="error" hidden>
+      The image could not be loaded. Check the URL.
+    </p>
+  </div>
+</label>
           <label>Amazon link
             <input id="f-amazonLink" type="url">
           </label>
